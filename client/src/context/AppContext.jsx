@@ -75,8 +75,8 @@ export function AppContextProvider({ children }) {
         try {
             await Api.post("/api/auth/logout")
             setUser(null)
-            setProject([])
-            setActiveProjects(null)
+            setProjects([])
+            setActiveProject(null)
             toast.success("Logged out successfully")
             navigate("/login")
         } catch (err) {
@@ -90,12 +90,12 @@ export function AppContextProvider({ children }) {
         if(!user) return;
         try {
             const { data } = await Api.get("/api/projects")
-            setActiveProjects(data)
+            setProjects(data)
         } catch (err) {
             console.error("Failed to list projects:, err");
             toast.error("Failed to list projects list");       
         }finally{
-            setLoadingProject(false);
+            setLoadingProjects(false);
         }
     }
 
@@ -104,7 +104,7 @@ export function AppContextProvider({ children }) {
         if(!silent) setLoadingActiveProject(true)
             try {
             const { data } = await Api.get(`/api/projects/${id}`)
-            setActiveProjects(data);
+            setActiveProject(data);
              
             // default file collection
             const files = Object.keys(data.files);
