@@ -1,5 +1,7 @@
 import { User } from "../models/User.js";
 import jwt from 'jsonwebtoken'
+import bcrypt from 'bcrypt'   
+
 
 const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret"
 
@@ -49,6 +51,7 @@ res.status(201).json({
 }
 
 
+
 export async function login(req, res){
   const {email, password} = req.body
 
@@ -58,21 +61,26 @@ export async function login(req, res){
   }
 
   const user = await User.findOne({email: email.toLowerCase().trim()})
-  if(user){
-  res.status(401).json({error: "Invalid email or password"})
-  return;
-}
-
-setSessionCookie(res, {userId: user._id.toString(), email: user.email})
-
-res.status(201).json({
-  user: {
-    _id: user._id,
-    name: user.name,
-    email: user.email
+  if(!user){                                        // ✅ fixed
+    res.status(401).json({error: "Invalid email or password"})
+    return;
   }
-})
 
+  const isMatch = await bcrypt.compare(password, user.password)   // ✅ password verify
+  if(!isMatch){
+    res.status(401).json({error: "Invalid email or password"})
+    return;
+  }
+
+  setSessionCookie(res, {userId: user._id.toString(), email: user.email})
+
+  res.status(200).json({                            // 200 behtar hai (201 sirf "created" ke liye hota hai)
+    user: {
+      _id: user._id,
+      name: user.name,
+      email: user.email
+    }
+  })
 }
 
 export async function logout(_req, res){
