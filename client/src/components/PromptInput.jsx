@@ -1,7 +1,8 @@
-import { MicIcon } from "lucide-react";
+import { Loader2Icon, MicIcon } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import { CloudUpload as CloudUploadIcon } from 'lucide-react'
 import { ArrowRight as ArrowRightIcon } from 'lucide-react'
+
 
 
 const PromptInput = ({

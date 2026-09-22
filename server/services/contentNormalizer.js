@@ -24,9 +24,10 @@ export function normalizeContent(content) {
             .replace(/\\\\/g, "\\");
     }
 
-    // Always clean up backslash-escaped quotes (e.g. className=\"relative\") in code.
-    // This is safe because "contains escaped quotes" is always invalid syntax in JSX/React.
-    content = content.replace(/(\w+)=\\"([^"]*?)\\"/g, '$1="$2"');
+   // Only clean up backslash-escaped quotes in JSX attribute value position
+// (e.g. className=\"relative\"), to avoid corrupting intentionally-escaped
+// quotes inside JS string/template literals.
+content = content.replace(/(\w+)=\\"([^"]*?)\\"/g, '$1="$2"');
 
     return content;
 }
