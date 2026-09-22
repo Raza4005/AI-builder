@@ -179,7 +179,7 @@ export function AppContextProvider({ children }) {
       if (!user) return;
       try {
         const { data } = await Api.delete(`/api/projects/${id}`);
-        setActiveProjects((prev) => prev.filter((p) => p._id === id));
+        setProjects((prev) => prev.filter((p) => p._id !== id));
         toast.success("Project delete successfully");
       } catch (err) {
         console.error("Failed to delete project:", err);
@@ -193,7 +193,7 @@ export function AppContextProvider({ children }) {
       if (!activeProject || !user) return;
       setChatLoading(true);
       try {
-        const { data } = await api.post(
+        const { data } = await Api.post(
           `/api/projects/${activeProject._id}/chat`,
           { prompt },
         );
@@ -217,7 +217,7 @@ export function AppContextProvider({ children }) {
     () =>
       debounce(async (files, id) => {
         try {
-          await api.put(`/api/projects/${id}/files`, { files });
+          await api.put(`/Api/projects/${id}/files`, { files });
         } catch (err) {
           console.error("Failed to auto-save files:", err);
           toast.error("Failed to save code modifications");

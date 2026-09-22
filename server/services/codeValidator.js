@@ -4,7 +4,93 @@
 // Void HTML elements that must be self-closed in JSX
 const VOID_ELEMENTS = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"];
 
-// Validate and auto-fix common AI-generated code issues
+// Brace/string-aware scanner that finds the true end of a JSX opening tag,
+// correctly skipping over `>` characters that appear inside {...} expressions
+// (e.g. arrow functions `=>`, comparisons `a > b`, generics, template literals, etc.)
+// and self-closes it if it isn't already self-closed.
+function selfCloseVoidElementsSafe(code, filePath, warnings) {
+    for (const tag of VOID_ELEMENTS) {
+        const openTagRegex = new RegExp(`<${tag}(?=[\\s/>])`, "gi");
+        let match;
+        let cursor = 0;
+
+        while ((match = openTagRegex.exec(code.slice(cursor))) !== null) {
+            const tagStart = cursor + match.index;
+            let i = tagStart + match[0].length;
+            let braceDepth = 0;
+            let inString = null; // tracks ', ", or `
+            let selfClosed = false;
+            let tagEnd = -1;
+
+            while (i < code.length) {
+                const ch = code[i];
+
+                if (inString) {
+                    if (ch === "\\") {
+                        i += 2;
+                        continue;
+                    }
+                    if (ch === inString) inString = null;
+                    i++;
+                    continue;
+                }
+
+                if (ch === "'" || ch === '"' || ch === "`") {
+                    inString = ch;
+                    i++;
+                    continue;
+                }
+
+                if (ch === "{") {
+                    braceDepth++;
+                    i++;
+                    continue;
+                }
+                if (ch === "}") {
+                    braceDepth--;
+                    i++;
+                    continue;
+                }
+
+                if (braceDepth === 0) {
+                    if (ch === "/" && code[i + 1] === ">") {
+                        selfClosed = true;
+                        tagEnd = i + 2;
+                        break;
+                    }
+                    if (ch === ">") {
+                        tagEnd = i + 1;
+                        break;
+                    }
+                }
+
+                i++;
+            }
+
+            if (tagEnd === -1) {
+                // Couldn't find a proper end (malformed code) — skip past this match to avoid infinite loop
+                cursor = tagStart + match[0].length;
+                openTagRegex.lastIndex = 0;
+                continue;
+            }
+
+            if (!selfClosed) {
+                const before = code.slice(0, tagEnd - 1);
+                const after = code.slice(tagEnd);
+                code = `${before} />${after}`;
+                warnings.push(`${filePath}: Self-closed <${tag}> element`);
+                tagEnd += 2; // " />" replaced ">" — net 2 extra chars inserted
+            }
+
+            cursor = tagEnd;
+            openTagRegex.lastIndex = 0;
+        }
+    }
+
+    return code;
+}
+
+// Validate and fix common AI-generated code issues
 export function validateAndFixCode(code, filePath, context) {
     const warnings = [];
     const isCSS = filePath.endsWith(".css");
@@ -48,15 +134,8 @@ export function validateAndFixCode(code, filePath, context) {
         warnings.push(`${filePath}: Fixed 'for=' → 'htmlFor='`);
     }
 
-    // 4. Self-close void elements that aren't self-closed
-    for (const tag of VOID_ELEMENTS) {
-        // Match <tag ... > that is NOT already self-closed (no / before >)
-        const voidRegex = new RegExp(`<${tag}(\\s[^>]*?)?(?<!/)>`, "gi");
-        if (voidRegex.test(code)) {
-            code = code.replace(new RegExp(`<${tag}(\\s[^>]*?)?(?<!/)>`, "gi"), (match, attrs) => `<${tag}${attrs || ""} />`);
-            warnings.push(`${filePath}: Self-closed <${tag}> elements`);
-        }
-    }
+    // 4. Self-close void elements that aren't self-closed (brace-aware, safe with arrow functions etc.)
+    code = selfCloseVoidElementsSafe(code, filePath, warnings);
 
     // 5. Ensure exactly one default export exists
     const defaultExportCount = (code.match(/export\s+default\s+/g) || []).length;
@@ -147,14 +226,8 @@ export function validateRevisionContent(content, filePath, op) {
         warnings.push(`${filePath}: Fixed 'for=' → 'htmlFor=' in replacement`);
     }
 
-    // Self-close void elements
-    for (const tag of VOID_ELEMENTS) {
-        const voidRegex = new RegExp(`<${tag}(\\s[^>]*?)?(?<!/)>`, "gi");
-        if (voidRegex.test(content)) {
-            content = content.replace(new RegExp(`<${tag}(\\s[^>]*?)?(?<!/)>`, "gi"), (match, attrs) => `<${tag}${attrs || ""} />`);
-            warnings.push(`${filePath}: Self-closed <${tag}> in replacement`);
-        }
-    }
+    // Self-close void elements (brace-aware, safe with arrow functions etc.)
+    content = selfCloseVoidElementsSafe(content, filePath, warnings);
 
     return { content, warnings };
 }

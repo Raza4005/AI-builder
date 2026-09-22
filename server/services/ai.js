@@ -1,22 +1,24 @@
-import {createOpenAI} from '@ai-sdk/openai'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { generateObject } from 'ai';
 import pMap from "p-map";
 import { FileCodeSchema, FilePlanSchema, RevisionResultSchema } from './aiSchemas.js';
 import { buildFileCodeSystem, FILE_PLAN_SYSTEM, REVISE_SYSTEM } from './prompts.js';
-import { el } from 'zod/v4/locales';
 import { normalizeContent } from './contentNormalizer.js';
 import { validateAndFixCode, validateRevisionContent } from './codeValidator.js';
 
-// --- GroqCloud Model Client Setup ---
-const MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
-const MAX_CONCURRENCY = parseInt(process.env.AI_MAX_CONCURRENCY || "6", 10)
+// --- Gemini Model Client Setup ---
+const MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const MAX_CONCURRENCY = parseInt(process.env.AI_MAX_CONCURRENCY || "3", 10)
 
-const groq = createOpenAI({
-    baseURL: "https://api.groq.com/openai/v1",
-    apiKey: process.env.GROQ_API_KEY,
+const google = createGoogleGenerativeAI({
+    apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
 })
 
-const model = groq(MODEL);
+const model = google(MODEL);
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // Generate a single file's code
 async function generateSingleFile(file, allFiles, prompt, alreadyGeneratedFiles){
@@ -30,7 +32,7 @@ async function generateSingleFile(file, allFiles, prompt, alreadyGeneratedFiles)
         schema: FileCodeSchema,
         system,
         prompt: userMsg,
-        maxRetries: 2,
+        maxRetries: 3,
      })
 
      let code = normalizeContent(object.code);
@@ -61,8 +63,12 @@ export async function generateProject(prompt, callbacks){
         schema: FilePlanSchema,
         system: FILE_PLAN_SYSTEM,
         prompt: `Plan a React website for: ${prompt}`,
-        maxRetries: 2,
+        maxRetries: 3,
     });
+
+    // Manual fallback defaults (schema no longer has .default())
+    if(!plan.projectName) plan.projectName = 'Generated Project';
+    if(!plan.projectDescription) plan.projectDescription = 'A React project';
 
     if(!plan.files.find((f)=> f.path === "/App.js")){
         plan.files.unshift({
@@ -92,7 +98,7 @@ export async function generateProject(prompt, callbacks){
     const files = {};
     let pendingFiles = plan.files.map((f)=>({...f}));
 
-    const maxRetryRounds = 2;
+    const maxRetryRounds = 3;
 
     for (let round = 0; round <= maxRetryRounds; round++) {
         if(pendingFiles.length === 0) break;
@@ -101,6 +107,8 @@ export async function generateProject(prompt, callbacks){
             console.log(
                 `[AI] Retry round ${round}/${maxRetryRounds} for ${pendingFiles.length} failed files: ${pendingFiles.map((f) => f.path).join(", ")}`,
             );
+            // Groq rate-limit se bachne ke liye retries ke darmiyan thoda ruk jayein
+            await sleep(1500 * round);
         }
 
         const results = await pMap(
@@ -137,29 +145,30 @@ export async function generateProject(prompt, callbacks){
          pendingFiles = failedFiles;
     }
 
+    // Har file jo saare retry rounds ke baad bhi fail rahi, uske liye placeholder banayein
+    // (sirf App.js nahi — koi bhi file, taake sandbox import error na de)
     if(pendingFiles.length > 0){
         const failedPaths = pendingFiles.map((f)=>f.path).join(", ");
         console.error(`[AI] Failed to generate ${pendingFiles.length} files after all retry rounds: ${failedPaths}`);
 
-        if (pendingFiles.some((f) => f.path === "/App.js")){
+        for (const file of pendingFiles) {
             const ext = file.path.split(".").pop()?.toLowerCase();
 
             if(ext === "css"){
-                files[file.path] = `/* ${file.description} — Generation failed, please retry */\n`
-            }else{
-                files[file.path] = "import React from 'react';\n\n" + 
-                `// ⚠️ This file could not be generated. Please retry.\n` +
-                `// Purpose: ${file.description}\n\n` + 
-                "export default function Placeholder() {\n" +
-                "  return (\n" +
-                    "    <div className='p-8 text-center text-zinc-400'>\n" +
-                    "      <p>⚠️ Component failed to generate. Please try again.</p>\n" +
-                    "    </div>\n" +
-                    "  );\n" +
-                    "}\n";
+                files[file.path] = `/* ${file.description} — Generation failed, please retry */\n`;
+            } else {
+                files[file.path] = "import React from 'react';\n\n" +
+                    `// ⚠️ This file could not be generated. Please retry.\n` +
+                    `// Purpose: ${file.description}\n\n` +
+                    "export default function Placeholder() {\n" +
+                    "  return (\n" +
+                        "    <div className='p-8 text-center text-zinc-400'>\n" +
+                        "      <p>⚠️ Component failed to generate. Please try again.</p>\n" +
+                        "    </div>\n" +
+                        "  );\n" +
+                        "}\n";
             }
         }
-
     }
 
     if(!files["/App.js"]){
@@ -204,6 +213,11 @@ export async function reviseProject(prompt, manifest, relevantFiles, recentMessa
         prompt: contextParts.join("\n"),
         maxRetries: 2
     })
+
+    // Manual fallback default (schema no longer has .default())
+    if(rawParsed && !rawParsed.description){
+        rawParsed.description = 'Applied revisions';
+    }
 
     if(rawParsed && Array.isArray(rawParsed.operations)){
         rawParsed.operations = rawParsed.operations.map((op)=>{

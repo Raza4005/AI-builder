@@ -3,20 +3,20 @@ import { z } from "zod";
 
 export const GenerationResultSchema = z.object({
     files: z.record(z.string(),  z.string()),
-    description: z.string().default('Generated project')
+    description: z.string(),
 })
 
 export const FileOpSchema = z.object({
     op: z.enum(["create", "update", "delete"]),
     path: z.string(),
-    content: z.string().nullable().optional(),
-    search: z.string().nullable().optional(),
-    replace: z.string().nullable().optional(),
+    content: z.string().nullable(),
+    search: z.string().nullable(),
+    replace: z.string().nullable(),
 })
 
 export const RevisionResultSchema = z.object({
     operations: z.array(FileOpSchema),
-    description: z.string().default('Applied revisions')
+    description: z.string(),
 })
 
 export const FilePlanSchema = z.object({
@@ -24,12 +24,12 @@ export const FilePlanSchema = z.object({
         z.object({
             path: z.string(),
             description: z.string(),
-            exports: z.string().optional().default(""),
-            imports: z.array(z.string()).optional().default([]),
+            exports: z.string(),
+            imports: z.array(z.string()),
         })
     ),
-    projectName: z.string().default('Generated Project'),
-    projectDescription: z.string().default('A React project')
+    projectName: z.string(),
+    projectDescription: z.string(),
 })
 
 export const FileCodeSchema = z.object({
